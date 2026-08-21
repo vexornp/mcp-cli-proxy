@@ -1,11 +1,13 @@
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct ExecParams {
     pub command: String,
     pub cwd: Option<String>,
@@ -14,7 +16,7 @@ pub struct ExecParams {
     pub stdin: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecResult {
     pub exit_code: Option<i32>,
     pub stdout: String,
@@ -39,6 +41,37 @@ impl ExecConfig {
             default_timeout_secs: 120,
             max_timeout_secs: 1800,
         }
+    }
+}
+
+/// Abstracts "run a command, get a result" so the MCP server is agnostic to
+/// whether commands run in-process (`LocalExecutor`) or are forwarded to the
+/// unsandboxed daemon over a Unix socket (`RemoteExecutor`).
+pub trait Executor: Send + Sync {
+    fn exec<'a>(
+        &'a self,
+        params: ExecParams,
+    ) -> Pin<Box<dyn Future<Output = Result<ExecResult, ExecError>> + Send + 'a>>;
+}
+
+/// Runs commands in the current process via `run_command`. Used by tests and
+/// any standalone path that does not need the daemon.
+pub struct LocalExecutor {
+    pub config: ExecConfig,
+}
+
+impl LocalExecutor {
+    pub fn new(config: ExecConfig) -> Self {
+        Self { config }
+    }
+}
+
+impl Executor for LocalExecutor {
+    fn exec<'a>(
+        &'a self,
+        params: ExecParams,
+    ) -> Pin<Box<dyn Future<Output = Result<ExecResult, ExecError>> + Send + 'a>> {
+        Box::pin(async move { run_command(params, self.config).await })
     }
 }
 
@@ -179,4 +212,21 @@ fn exit_code_from_status(status: &std::process::ExitStatus) -> Option<i32> {
         use std::os::unix::process::ExitStatusExt;
         status.signal().map(|s| 128 + s)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn local_executor_runs_command() {
+        let exec = LocalExecutor::new(ExecConfig::defaults());
+        let params = ExecParams {
+            command: "echo hi".into(),
+            ..Default::default()
+        };
+        let result = exec.exec(params).await.unwrap();
+        assert_eq!(result.stdout, "hi\n");
+        assert_eq!(result.exit_code, Some(0));
+    }
 }
