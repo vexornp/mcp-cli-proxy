@@ -9,12 +9,23 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
-    /// Run the stdio MCP server (default).
+    /// Run the stdio MCP server (default). Forwards exec_command calls to the
+    /// daemon over /tmp/mcp-cli-proxy.sock — start `mcp-cli-proxy daemon` first.
     Serve,
+    /// Run the unsandboxed exec daemon. Start this in a separate terminal
+    /// before launching logoscode. Binds /tmp/mcp-cli-proxy.sock and runs the
+    /// shell commands the bridge forwards to it.
+    Daemon,
 }
 
 pub async fn run(cmd: Option<Command>) -> Result<(), Box<dyn std::error::Error>> {
     match cmd {
         None | Some(Command::Serve) => crate::server::run_server().await,
+        Some(Command::Daemon) => {
+            let opts = crate::bridge::DaemonOptions::defaults();
+            crate::daemon::run_daemon(opts)
+                .await
+                .map_err(|e| -> Box<dyn std::error::Error> { e })
+        }
     }
 }

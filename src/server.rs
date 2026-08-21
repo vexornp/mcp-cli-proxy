@@ -12,8 +12,9 @@ use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::bridge::{connect, SOCKET_PATH};
 use crate::config::ServerConfig;
-use crate::exec::{Executor, ExecParams, LocalExecutor};
+use crate::exec::{Executor, ExecParams};
 use crate::log::resolve_log;
 
 pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
@@ -44,9 +45,15 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         server_cfg.exec.max_timeout_secs
     );
 
-    let server = ProxyServer {
-        executor: Arc::new(LocalExecutor::new(server_cfg.exec)),
+    let executor: Arc<dyn Executor> = match connect(std::path::Path::new(SOCKET_PATH)).await {
+        Ok(remote) => Arc::new(remote),
+        Err(e) => {
+            eprintln!("mcp-cli-proxy: {e}");
+            std::process::exit(1);
+        }
     };
+
+    let server = ProxyServer { executor };
     let (stdin, stdout) = rmcp::transport::io::stdio();
     let running = server.serve((stdin, stdout)).await?;
     running.waiting().await?;
