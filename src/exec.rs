@@ -84,7 +84,9 @@ pub async fn run_command(params: ExecParams, config: ExecConfig) -> Result<ExecR
 
     if let Some(input) = &params.stdin {
         if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(input.as_bytes()).await;
+            // Race the stdin write against the timeout so a command that
+            // doesn't read stdin can't deadlock us on a full pipe buffer.
+            let _ = tokio::time::timeout(timeout, stdin.write_all(input.as_bytes())).await;
         }
     } else {
         drop(child.stdin.take());

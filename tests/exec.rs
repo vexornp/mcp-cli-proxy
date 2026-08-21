@@ -158,3 +158,24 @@ async fn signal_exit_returns_128_plus_signal() {
     assert!(!result.timed_out);
     assert_eq!(result.exit_code, Some(143));
 }
+
+#[tokio::test]
+async fn large_stdin_to_non_reading_command_does_not_hang() {
+    // A command that ignores stdin, with a large input that exceeds the pipe
+    // buffer. Without the stdin-write timeout fix, this would deadlock.
+    let large_input = "x".repeat(100_000);
+    let params = ExecParams {
+        command: "true".into(),
+        stdin: Some(large_input),
+        timeout_secs: Some(5),
+        ..Default::default()
+    };
+    let start = std::time::Instant::now();
+    let result = run_command(params, ExecConfig::defaults()).await.unwrap();
+    assert!(!result.timed_out, "should complete, not time out");
+    assert_eq!(result.exit_code, Some(0));
+    assert!(
+        start.elapsed().as_secs() < 10,
+        "should complete near-instantly, not hang"
+    );
+}
