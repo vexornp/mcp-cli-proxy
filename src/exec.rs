@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -56,11 +57,27 @@ pub async fn run_command(params: ExecParams, config: ExecConfig) -> Result<ExecR
     let mut cmd = Command::new("sh");
     cmd.arg("-c").arg(&params.command);
     cmd.kill_on_drop(true);
-    cmd.stdin(std::process::Stdio::null());
+    if let Some(cwd) = &params.cwd {
+        cmd.current_dir(cwd);
+    }
+    if let Some(env) = &params.env {
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
+    }
+    cmd.stdin(std::process::Stdio::piped());
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
 
-    let child = cmd.spawn().map_err(|e| ExecError::Spawn(e.to_string()))?;
+    let mut child = cmd.spawn().map_err(|e| ExecError::Spawn(e.to_string()))?;
+
+    if let Some(input) = &params.stdin {
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(input.as_bytes()).await;
+        }
+    } else {
+        drop(child.stdin.take());
+    }
 
     match tokio::time::timeout(timeout, child.wait_with_output()).await {
         Ok(Ok(output)) => Ok(ExecResult {

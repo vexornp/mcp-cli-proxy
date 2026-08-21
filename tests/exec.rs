@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::path::Path;
+
 use mcp_cli_proxy::exec::{run_command, ExecConfig, ExecParams};
 
 #[tokio::test]
@@ -52,4 +55,43 @@ async fn pipes_and_globs_work() {
     };
     let result = run_command(params, ExecConfig::defaults()).await.unwrap();
     assert_eq!(result.stdout, "a\n");
+}
+
+#[tokio::test]
+async fn pipes_stdin() {
+    let params = ExecParams {
+        command: "cat".into(),
+        stdin: Some("hi\n".into()),
+        ..Default::default()
+    };
+    let result = run_command(params, ExecConfig::defaults()).await.unwrap();
+    assert_eq!(result.stdout, "hi\n");
+}
+
+#[tokio::test]
+async fn respects_cwd() {
+    let cwd = std::env::temp_dir();
+    let params = ExecParams {
+        command: "pwd".into(),
+        cwd: Some(cwd.to_string_lossy().into_owned()),
+        ..Default::default()
+    };
+    let result = run_command(params, ExecConfig::defaults()).await.unwrap();
+    let reported = Path::new(result.stdout.trim());
+    let canonical_reported = std::fs::canonicalize(reported).unwrap();
+    let canonical_set = std::fs::canonicalize(&cwd).unwrap();
+    assert_eq!(canonical_reported, canonical_set);
+}
+
+#[tokio::test]
+async fn passes_env_overrides() {
+    let mut env = HashMap::new();
+    env.insert("MY_PROXY_VAR".to_string(), "hello".to_string());
+    let params = ExecParams {
+        command: "printenv MY_PROXY_VAR".into(),
+        env: Some(env),
+        ..Default::default()
+    };
+    let result = run_command(params, ExecConfig::defaults()).await.unwrap();
+    assert_eq!(result.stdout, "hello\n");
 }
