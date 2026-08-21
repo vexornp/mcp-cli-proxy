@@ -10,6 +10,19 @@ use tokio::sync::Mutex;
 
 pub const SOCKET_PATH: &str = "/tmp/mcp-cli-proxy.sock";
 
+/// io::Error kinds that indicate the daemon connection dropped mid-call
+/// (peer closed, reset, or broken pipe on write). Maps to the spec's
+/// `daemon connection lost mid-call` message.
+fn is_connection_lost(e: &std::io::Error) -> bool {
+    matches!(
+        e.kind(),
+        std::io::ErrorKind::UnexpectedEof
+            | std::io::ErrorKind::ConnectionReset
+            | std::io::ErrorKind::ConnectionAborted
+            | std::io::ErrorKind::BrokenPipe
+    )
+}
+
 #[derive(Debug, Error)]
 pub enum BridgeError {
     #[error("cannot connect to daemon at {path} (is 'mcp-cli-proxy daemon' running?)")]
@@ -71,12 +84,26 @@ impl Executor for RemoteExecutor {
                 .map_err(|e| ExecError::Spawn(format!("serialize request: {e}")))?;
             write_frame(&mut *s, &req)
                 .await
-                .map_err(|e| ExecError::Spawn(format!("write request: {e}")))?;
-            let resp = read_frame(&mut *s)
-                .await
-                .map_err(|e| ExecError::Spawn(format!("read response: {e}")))?;
+                .map_err(|e| {
+                    if is_connection_lost(&e) {
+                        ExecError::DaemonConnectionLost
+                    } else {
+                        ExecError::Spawn(format!("write request: {e}"))
+                    }
+                })?;
+            let resp = match read_frame(&mut *s).await {
+                Ok(bytes) => bytes,
+                Err(e) if is_connection_lost(&e) => {
+                    return Err(ExecError::DaemonConnectionLost);
+                }
+                Err(_) => {
+                    // Non-connection read errors (e.g. an oversized length
+                    // prefix) are frame parse failures per the spec.
+                    return Err(ExecError::BadResponse);
+                }
+            };
             let rpc: Result<ExecResult, String> = serde_json::from_slice(&resp)
-                .map_err(|e| ExecError::Spawn(format!("deserialize response: {e}")))?;
+                .map_err(|_| ExecError::BadResponse)?;
             rpc.map_err(ExecError::Spawn)
         })
     }

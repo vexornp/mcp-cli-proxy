@@ -85,6 +85,17 @@ Equivalent env vars: `MCP_CLI_PROXY_OUTPUT_CAP`, `MCP_CLI_PROXY_DEFAULT_TIMEOUT`
 
 This proxy is **unrestricted** by design — it runs any command, any cwd, on your PC. It is intended for a personal dev box you control. The only guard is a per-call timeout (robustness, not a security gate).
 
+## Known limitations
+
+- **No reconnect after daemon restart.** The bridge holds a single persistent
+  connection to the daemon for its lifetime. If the daemon restarts, the bridge
+  keeps talking to the dead socket and every `exec_command` fails until the
+  agent (logoscode) is restarted — restart the agent to reconnect.
+- **Sequential requests.** Calls are serialized over one socket (no concurrent
+  in-flight requests). This is a deliberate non-goal per the design spec.
+- **Unix-only.** No Windows named-pipe support; the daemon and bridge use Unix
+  domain sockets.
+
 ## Smoke test
 
 ```sh

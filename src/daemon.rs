@@ -2,28 +2,20 @@ use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 
 use tokio::net::{UnixListener, UnixStream};
-use tokio::signal;
+use tokio::signal::unix::{signal, SignalKind};
 
 use crate::bridge::DaemonOptions;
 use crate::config::ServerConfig;
 use crate::exec::{run_command, ExecConfig, ExecParams, ExecResult};
 use crate::framing::{read_frame, write_frame};
-use crate::log::resolve_log;
+use crate::log::{init_logger, resolve_log};
 
 pub async fn run_daemon(opts: DaemonOptions) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let log_dir_cfg = ServerConfig::resolve()
         .map(|c| c.log_dir)
         .unwrap_or_else(|_| std::env::temp_dir().join("mcp-cli-proxy").join("logs"));
     let (log_dir, log_file) = resolve_log(&log_dir_cfg);
-
-    let writer: std::sync::Mutex<Box<dyn std::io::Write + Send>> = match log_file {
-        Some(file) => std::sync::Mutex::new(Box::new(file)),
-        None => std::sync::Mutex::new(Box::new(std::io::sink())),
-    };
-    let _ = tracing_subscriber::fmt()
-        .with_writer(writer)
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .try_init();
+    init_logger(log_file);
     tracing::info!(
         "mcp-cli-proxy daemon starting: socket={}, log_dir={}",
         opts.socket_path.display(),
@@ -35,6 +27,8 @@ pub async fn run_daemon(opts: DaemonOptions) -> Result<(), Box<dyn std::error::E
         let _ = std::fs::remove_file(&opts.socket_path);
     }
     let listener = UnixListener::bind(&opts.socket_path)?;
+    // TOCTOU: a peer could swap the socket file between bind and set_permissions.
+    // Accepted on a single-user Mac; revisit if shared with other users.
     std::fs::set_permissions(
         &opts.socket_path,
         std::fs::Permissions::from_mode(0o600),
@@ -44,10 +38,15 @@ pub async fn run_daemon(opts: DaemonOptions) -> Result<(), Box<dyn std::error::E
     let config = Arc::new(opts.config);
     let socket_path = opts.socket_path.clone();
 
+    let mut term = signal(SignalKind::terminate())?;
+
     tokio::select! {
         _ = accept_loop(&listener, config) => {}
-        _ = signal::ctrl_c() => {
+        _ = tokio::signal::ctrl_c() => {
             tracing::info!("daemon: SIGINT received, shutting down");
+        }
+        _ = term.recv() => {
+            tracing::info!("daemon: SIGTERM received, shutting down");
         }
     }
 

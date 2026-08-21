@@ -21,6 +21,14 @@ It binds `/tmp/mcp-cli-proxy.sock` (0600) and stays in the foreground. If
 /tmp/mcp-cli-proxy.sock (is 'mcp-cli-proxy daemon' running?)", the daemon is
 not running — ask the user to start it.
 
+## Known limitations
+
+- If the daemon restarts, the bridge does not reconnect — restart the agent
+  (logoscode) to reconnect.
+- Requests are sequential over the single socket (no concurrent in-flight
+  requests) — a deliberate non-goal per the design spec.
+- Unix-only (no Windows named-pipe support).
+
 The following MCP servers are configured but unavailable:
 - logos_code_remote_112: MCP error -32000: Connection closed
 

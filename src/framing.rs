@@ -28,6 +28,7 @@ pub async fn read_frame<R: AsyncRead + Unpin>(r: &mut R) -> io::Result<Vec<u8>> 
 mod tests {
     use super::*;
     use tokio::io::duplex;
+    use tokio::net::UnixStream;
 
     #[tokio::test]
     async fn round_trips_payload() {
@@ -64,5 +65,20 @@ mod tests {
         drop(_tx);
         let err = read_frame(&mut rx).await.unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+    }
+
+    // A peer advertising a frame larger than MAX_FRAME_BYTES must be rejected
+    // BEFORE any allocation — write only the 4-byte length prefix (no body).
+    #[tokio::test]
+    async fn read_frame_rejects_oversized_length_prefix() {
+        let (mut tx, mut rx) = UnixStream::pair().unwrap();
+        // 0xFFFFFFFF (~4 GiB) far exceeds MAX_FRAME_BYTES (64 MiB).
+        tx.write_all(&[0xFF, 0xFF, 0xFF, 0xFF]).await.unwrap();
+        tx.flush().await.unwrap();
+        let err = read_frame(&mut rx).await.unwrap_err();
+        assert!(
+            err.to_string().contains("frame too large"),
+            "expected 'frame too large' in error, got: {err}"
+        );
     }
 }

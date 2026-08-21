@@ -81,6 +81,10 @@ pub enum ExecError {
     Spawn(String),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("daemon connection lost mid-call")]
+    DaemonConnectionLost,
+    #[error("bad response from daemon")]
+    BadResponse,
 }
 
 impl From<tokio::task::JoinError> for ExecError {

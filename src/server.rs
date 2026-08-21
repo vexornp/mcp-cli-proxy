@@ -15,7 +15,7 @@ use std::sync::Arc;
 use crate::bridge::{connect, SOCKET_PATH};
 use crate::config::ServerConfig;
 use crate::exec::{Executor, ExecParams};
-use crate::log::resolve_log;
+use crate::log::{init_logger, resolve_log};
 
 pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     let server_cfg = ServerConfig::resolve()?;
@@ -29,16 +29,9 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    let writer: std::sync::Mutex<Box<dyn std::io::Write + Send>> = match log_file {
-        Some(file) => std::sync::Mutex::new(Box::new(file)),
-        None => std::sync::Mutex::new(Box::new(std::io::sink())),
-    };
-    let _ = tracing_subscriber::fmt()
-        .with_writer(writer)
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .try_init();
+    init_logger(log_file);
     tracing::info!(
-        "mcp-cli-proxy starting: log_dir={}, output_cap_bytes={}, default_timeout_secs={}, max_timeout_secs={}",
+        "mcp-cli-proxy starting: log_dir={}, exec limits (enforced by daemon): output_cap_bytes={}, default_timeout_secs={}, max_timeout_secs={}",
         log_dir.display(),
         server_cfg.exec.output_cap_bytes,
         server_cfg.exec.default_timeout_secs,
