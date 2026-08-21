@@ -37,7 +37,7 @@ Copied verbatim from the design spec (`docs/superpowers/specs/2026-08-21-mcp-cli
 | `src/main.rs` | Thin binary: parses CLI, calls `cli::run`. | Task 1 |
 | `src/cli.rs` | clap `Cli` + `Command::Serve` (default), `run()` dispatches to `server::run_server`. | Task 1 |
 | `src/server.rs` | rmcp `ServerHandler` impl, tool list, `dispatch`, validation, tracing setup. Stub in Task 1; full impl in Task 5. | Task 1 (stub), Task 5 (full) |
-| `src/config.rs` | `ExecConfig`, `ServerConfig::resolve()`, `parse_kv()`, path helpers. Stub in Task 1; full in Task 4. | Task 1 (stub), Task 4 (full) |
+| `src/config.rs` | `ServerConfig`, `ServerConfig::resolve()`, `parse_kv()`, path helpers; re-exports `ExecConfig` from `exec.rs`. | Task 4 (full) |
 | `src/exec.rs` | `ExecParams`, `ExecResult`, `ExecError`, `run_command()`, `drain()`, `kill_group()`. No `rmcp` imports. | Task 1 (basic), Task 2 (inputs), Task 3 (limits) |
 | `tests/exec.rs` | Integration tests exercising `run_command` directly. | Tasks 1–3 |
 | `README.md` | Overview, install, config, host registration, smoke test. | Task 6 |
@@ -710,11 +710,10 @@ git commit -m "feat(exec): per-call timeout with clamping, output truncation, pr
 
 **Files:**
 - Modify: `src/config.rs` (replace stub with full implementation + unit tests)
-- Modify: `src/exec.rs` (move `ExecConfig` + `defaults()` from `exec.rs` to `config.rs`, re-export from `exec.rs` to keep `use crate::exec::ExecConfig` working)
 
 **Interfaces:**
-- Consumes: `ExecConfig` (from Task 1).
-- Produces: `pub struct ServerConfig { pub exec: ExecConfig, pub log_dir: PathBuf }`; `pub fn ServerConfig::resolve() -> Result<ServerConfig, String>`; `pub fn parse_kv(contents: &str) -> Vec<(String, String)>`. `ServerConfig::resolve()` reads the config file (if present), then applies env overrides. `server.rs` (Task 5) will call `ServerConfig::resolve()`.
+- Consumes: `ExecConfig` (defined in `exec.rs` since Task 1; stays there because `run_command` uses it).
+- Produces: `pub struct ServerConfig { pub exec: ExecConfig, pub log_dir: PathBuf }`; `pub fn ServerConfig::resolve() -> Result<ServerConfig, String>`; `pub fn parse_kv(contents: &str) -> Vec<(String, String)>`. `config.rs` re-exports `ExecConfig` via `pub use crate::exec::ExecConfig;` so `server.rs` can import everything from `config`. `ServerConfig::resolve()` reads the config file (if present), then applies env overrides. `server.rs` (Task 5) will call `ServerConfig::resolve()`.
 
 - [ ] **Step 1: Write the failing unit tests at the bottom of `src/config.rs`**
 
