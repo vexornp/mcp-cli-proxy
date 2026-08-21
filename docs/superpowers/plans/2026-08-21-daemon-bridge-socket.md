@@ -283,12 +283,16 @@ In `src/exec.rs`:
 
 - [ ] **Step 4: Implement the `Executor` trait and `LocalExecutor`**
 
-Add to `src/exec.rs` (after the `ExecConfig` impl block, before `#[derive(Debug, Error)] pub enum ExecError` or anywhere sensible among the type defs — place it right after `ExecConfig`):
+(a) Add these two `use` lines to the top of `src/exec.rs` (alongside the existing `use serde::...`, `use thiserror::...`, `use tokio::...` imports):
 
 ```rust
 use std::future::Future;
 use std::pin::Pin;
+```
 
+(b) Add the trait and `LocalExecutor` after the `ExecConfig` impl block (i.e. after the `impl ExecConfig { ... }` closing brace, before `#[derive(Debug, Error)] pub enum ExecError`):
+
+```rust
 /// Abstracts "run a command, get a result" so the MCP server is agnostic to
 /// whether commands run in-process (`LocalExecutor`) or are forwarded to the
 /// unsandboxed daemon over a Unix socket (`RemoteExecutor`).
@@ -657,32 +661,24 @@ pub struct RemoteExecutor {
     stream: Mutex<UnixStream>,
 }
 
-impl RemoteExecutor {
-    pub async fn connect(path: &Path) -> Result<Self, BridgeError> {
-        Self::connect_at(path).await
-    }
-
-    async fn connect_at(path: &Path) -> Result<Self, BridgeError> {
-        match UnixStream::connect(path).await {
-            Ok(stream) => Ok(RemoteExecutor {
-                stream: Mutex::new(stream),
-            }),
-            Err(e)
-                if e.kind() == std::io::ErrorKind::NotFound
-                    || e.kind() == std::io::ErrorKind::ConnectionRefused =>
-            {
-                Err(BridgeError::DaemonDown {
-                    path: path.display().to_string(),
-                })
-            }
-            Err(e) => Err(BridgeError::Io(e)),
-        }
-    }
-}
-
-/// Free function form used by `run_server` to build a `RemoteExecutor`.
+/// Connect to the daemon at `path` and return a `RemoteExecutor`. Maps
+/// missing-socket / connection-refused to `DaemonDown` so the caller can print
+/// the "is 'mcp-cli-proxy daemon' running?" message.
 pub async fn connect(path: &Path) -> Result<RemoteExecutor, BridgeError> {
-    RemoteExecutor::connect(path).await
+    match UnixStream::connect(path).await {
+        Ok(stream) => Ok(RemoteExecutor {
+            stream: Mutex::new(stream),
+        }),
+        Err(e)
+            if e.kind() == std::io::ErrorKind::NotFound
+                || e.kind() == std::io::ErrorKind::ConnectionRefused =>
+        {
+            Err(BridgeError::DaemonDown {
+                path: path.display().to_string(),
+            })
+        }
+        Err(e) => Err(BridgeError::Io(e)),
+    }
 }
 
 impl Executor for RemoteExecutor {
