@@ -13,7 +13,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::config::ServerConfig;
-use crate::exec::{run_command, ExecConfig, ExecParams};
+use crate::exec::{Executor, ExecParams, LocalExecutor};
 use crate::log::resolve_log;
 
 pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
@@ -45,7 +45,7 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let server = ProxyServer {
-        config: Arc::new(server_cfg.exec),
+        executor: Arc::new(LocalExecutor::new(server_cfg.exec)),
     };
     let (stdin, stdout) = rmcp::transport::io::stdio();
     let running = server.serve((stdin, stdout)).await?;
@@ -55,7 +55,7 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 struct ProxyServer {
-    config: Arc<ExecConfig>,
+    executor: Arc<dyn Executor>,
 }
 
 fn exec_tool_schema() -> serde_json::Map<String, serde_json::Value> {
@@ -102,14 +102,14 @@ impl ServerHandler for ProxyServer {
         _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<CallToolResponse, ErrorData>> + MaybeSendFuture + '_ {
         let args = request.arguments.clone().unwrap_or_default();
-        let config = self.config.clone();
-        async move { dispatch(&args, &config).await }
+        let executor = self.executor.clone();
+        async move { dispatch(&args, &executor).await }
     }
 }
 
 async fn dispatch(
     args: &serde_json::Map<String, serde_json::Value>,
-    config: &ExecConfig,
+    executor: &Arc<dyn Executor>,
 ) -> Result<CallToolResponse, ErrorData> {
     // Validate command (tool-level error -> isError result, not protocol error).
     let command = match args.get("command").and_then(|v| v.as_str()) {
@@ -158,7 +158,7 @@ async fn dispatch(
         stdin,
     };
 
-    match run_command(params, *config).await {
+    match executor.exec(params).await {
         Ok(result) => {
             let text = serde_json::to_string_pretty(&result)
                 .unwrap_or_else(|_| serde_json::to_string(&result).unwrap_or_default());
@@ -178,4 +178,39 @@ fn tool_error(msg: &str) -> CallToolResponse {
     CallToolResponse::Complete(rmcp::model::CallToolResult::error(vec![
         ContentBlock::text(msg.to_string()),
     ]))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::exec::{ExecConfig, LocalExecutor};
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn dispatch_success_via_local_executor() {
+        let executor: Arc<dyn Executor> = Arc::new(LocalExecutor::new(ExecConfig::defaults()));
+        let mut args = serde_json::Map::new();
+        args.insert("command".into(), serde_json::json!("echo dispatched"));
+        let resp = dispatch(&args, &executor).await.unwrap();
+        match resp {
+            rmcp::model::CallToolResponse::Complete(result) => {
+                assert!(!result.is_error.unwrap(), "should not be an error");
+                assert!(!result.content.is_empty(), "should have content");
+            }
+            other => panic!("unexpected response variant: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn dispatch_missing_command_returns_tool_error() {
+        let executor: Arc<dyn Executor> = Arc::new(LocalExecutor::new(ExecConfig::defaults()));
+        let args = serde_json::Map::new();
+        let resp = dispatch(&args, &executor).await.unwrap();
+        match resp {
+            rmcp::model::CallToolResponse::Complete(result) => {
+                assert!(result.is_error.unwrap(), "empty command should be a tool error");
+            }
+            other => panic!("unexpected response variant: {other:?}"),
+        }
+    }
 }
