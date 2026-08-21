@@ -120,13 +120,14 @@ async fn dispatch(
         }
     }
 
-    // Validate timeout_secs.
-    let timeout_secs = args.get("timeout_secs").and_then(|v| v.as_u64());
-    if let Some(t) = timeout_secs {
-        if t == 0 {
-            return Ok(tool_error("timeout_secs must be greater than 0"));
-        }
-    }
+    // Validate timeout_secs (must be > 0 if provided; negatives caught via as_i64).
+    let timeout_secs = match args.get("timeout_secs") {
+        None => None,
+        Some(v) => match v.as_i64() {
+            Some(t) if t > 0 => Some(t as u64),
+            _ => return Ok(tool_error("timeout_secs must be greater than 0")),
+        },
+    };
 
     // Parse env (string -> string map).
     let env: Option<HashMap<String, String>> = args

@@ -146,3 +146,15 @@ async fn output_truncation() {
     assert!(result.stdout_truncated);
     assert_eq!(result.stdout.len(), 16);
 }
+
+#[tokio::test]
+async fn signal_exit_returns_128_plus_signal() {
+    // sh kills itself with SIGTERM (signal 15) -> exit_code should be 128+15=143.
+    let params = ExecParams {
+        command: "kill -TERM $$".into(),
+        ..Default::default()
+    };
+    let result = run_command(params, ExecConfig::defaults()).await.unwrap();
+    assert!(!result.timed_out);
+    assert_eq!(result.exit_code, Some(143));
+}

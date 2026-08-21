@@ -102,7 +102,7 @@ pub async fn run_command(params: ExecParams, config: ExecConfig) -> Result<ExecR
             let (out_buf, out_trunc) = stdout_task.await??;
             let (err_buf, err_trunc) = stderr_task.await??;
             ExecResult {
-                exit_code: status.code(),
+                exit_code: exit_code_from_status(&status),
                 stdout: String::from_utf8_lossy(&out_buf).into_owned(),
                 stderr: String::from_utf8_lossy(&err_buf).into_owned(),
                 stdout_truncated: out_trunc,
@@ -168,4 +168,13 @@ fn kill_group(pid: u32) {
     unsafe {
         libc::kill(-(pid as i32), libc::SIGKILL);
     }
+}
+
+/// Extract exit code from an ExitStatus, following the Unix convention
+/// (128 + signal number) for signal-terminated processes.
+fn exit_code_from_status(status: &std::process::ExitStatus) -> Option<i32> {
+    status.code().or_else(|| {
+        use std::os::unix::process::ExitStatusExt;
+        status.signal().map(|s| 128 + s)
+    })
 }
