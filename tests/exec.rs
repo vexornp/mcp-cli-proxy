@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::time::Instant;
 
 use mcp_cli_proxy::exec::{run_command, ExecConfig, ExecParams};
 
@@ -94,4 +95,54 @@ async fn passes_env_overrides() {
     };
     let result = run_command(params, ExecConfig::defaults()).await.unwrap();
     assert_eq!(result.stdout, "hello\n");
+}
+
+#[tokio::test]
+async fn timeout_kills_and_reports() {
+    let params = ExecParams {
+        command: "sleep 10".into(),
+        timeout_secs: Some(1),
+        ..Default::default()
+    };
+    let start = Instant::now();
+    let result = run_command(params, ExecConfig::defaults()).await.unwrap();
+    assert!(result.timed_out);
+    assert_eq!(result.exit_code, None);
+    assert!(start.elapsed().as_secs() < 5, "should be killed near 1s, not 10s");
+}
+
+#[tokio::test]
+async fn timeout_clamped_to_max() {
+    // timeout_secs (3600) exceeds max_timeout_secs (2) -> clamped to 2.
+    let config = ExecConfig {
+        max_timeout_secs: 2,
+        ..ExecConfig::defaults()
+    };
+    let params = ExecParams {
+        command: "sleep 10".into(),
+        timeout_secs: Some(3600),
+        ..Default::default()
+    };
+    let start = Instant::now();
+    let result = run_command(params, config).await.unwrap();
+    assert!(result.timed_out);
+    assert_eq!(result.exit_code, None);
+    let elapsed = start.elapsed().as_secs();
+    assert!(elapsed >= 2 && elapsed < 8, "should be clamped to ~2s, got {elapsed}s");
+}
+
+#[tokio::test]
+async fn output_truncation() {
+    let config = ExecConfig {
+        output_cap_bytes: 16,
+        ..ExecConfig::defaults()
+    };
+    let params = ExecParams {
+        command: "seq 1 1000".into(),
+        ..Default::default()
+    };
+    let result = run_command(params, config).await.unwrap();
+    assert_eq!(result.exit_code, Some(0));
+    assert!(result.stdout_truncated);
+    assert_eq!(result.stdout.len(), 16);
 }
