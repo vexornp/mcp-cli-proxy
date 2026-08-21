@@ -1,17 +1,17 @@
 class McpCliProxy < Formula
   desc "Generic-executor MCP server: runs shell commands on the host PC, outside the agent sandbox"
   homepage "https://github.com/vexornp/mcp-cli-proxy"
-  version "0.1.0"
+  version "@VERSION@"
   license "MIT"
 
   on_arm do
-    url "https://github.com/vexornp/mcp-cli-proxy/releases/download/v0.1.0/mcp-cli-proxy-aarch64-apple-darwin.tar.gz"
-    sha256 "REPLACE_WITH_ARM_SHA256"
+    url "https://github.com/vexornp/mcp-cli-proxy/releases/download/@TAG@/mcp-cli-proxy-aarch64-apple-darwin.tar.gz"
+    sha256 "@ARM_SHA@"
   end
 
   on_intel do
-    url "https://github.com/vexornp/mcp-cli-proxy/releases/download/v0.1.0/mcp-cli-proxy-x86_64-apple-darwin.tar.gz"
-    sha256 "REPLACE_WITH_INTEL_SHA256"
+    url "https://github.com/vexornp/mcp-cli-proxy/releases/download/@TAG@/mcp-cli-proxy-x86_64-apple-darwin.tar.gz"
+    sha256 "@INTEL_SHA@"
   end
 
   def install
