@@ -785,6 +785,7 @@ async fn wait_for_socket(path: &std::path::Path) {
     panic!("daemon did not create socket in time: {}", path.display());
 }
 
+#[ignore = "requires unsandboxed env (sandbox blocks UnixListener::bind); run with: cargo test --test daemon_bridge -- --ignored"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn daemon_runs_echo_command() {
     let sock = temp_socket();
@@ -810,6 +811,7 @@ async fn daemon_runs_echo_command() {
     let _ = std::fs::remove_file(&sock);
 }
 
+#[ignore = "requires unsandboxed env (sandbox blocks UnixListener::bind); run with: cargo test --test daemon_bridge -- --ignored"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn daemon_reports_nonzero_exit() {
     let sock = temp_socket();
@@ -833,6 +835,7 @@ async fn daemon_reports_nonzero_exit() {
     let _ = std::fs::remove_file(&sock);
 }
 
+#[ignore = "requires unsandboxed env (sandbox blocks UnixListener::bind); run with: cargo test --test daemon_bridge -- --ignored"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn daemon_enforces_timeout() {
     let sock = temp_socket();
@@ -968,17 +971,80 @@ async fn handle_conn(
         write_frame(&mut conn, &resp).await?;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // handle_conn is testable in-sandbox via UnixStream::pair() (socketpair),
+    // which the sandbox permits — unlike UnixListener::bind (sandbox-blocked).
+    // The full daemon integration tests in tests/daemon_bridge.rs are #[ignore]'d
+    // and run unsandboxed via: cargo test --test daemon_bridge -- --ignored
+    #[tokio::test]
+    async fn handle_conn_round_trips_one_command() {
+        let config = ExecConfig::defaults();
+        let (mut client, server) = UnixStream::pair().unwrap();
+
+        let task = tokio::spawn(async move {
+            handle_conn(server, &config).await.unwrap();
+        });
+
+        let params = ExecParams {
+            command: "echo hi".into(),
+            ..Default::default()
+        };
+        let req = serde_json::to_vec(&params).unwrap();
+        write_frame(&mut client, &req).await.unwrap();
+
+        let resp = read_frame(&mut client).await.unwrap();
+        let rpc: Result<ExecResult, String> = serde_json::from_slice(&resp).unwrap();
+        let result = rpc.unwrap();
+        assert_eq!(result.stdout, "hi\n");
+        assert_eq!(result.exit_code, Some(0));
+
+        drop(client);
+        let _ = task.await;
+    }
+
+    #[tokio::test]
+    async fn handle_conn_reports_nonzero_exit() {
+        let config = ExecConfig::defaults();
+        let (mut client, server) = UnixStream::pair().unwrap();
+
+        let task = tokio::spawn(async move {
+            handle_conn(server, &config).await.unwrap();
+        });
+
+        let params = ExecParams {
+            command: "exit 7".into(),
+            ..Default::default()
+        };
+        let req = serde_json::to_vec(&params).unwrap();
+        write_frame(&mut client, &req).await.unwrap();
+
+        let resp = read_frame(&mut client).await.unwrap();
+        let rpc: Result<ExecResult, String> = serde_json::from_slice(&resp).unwrap();
+        let result = rpc.unwrap();
+        assert_eq!(result.exit_code, Some(7));
+
+        drop(client);
+        let _ = task.await;
+    }
+}
 ```
 
-- [ ] **Step 5: Run the integration tests to verify they pass**
+- [ ] **Step 5: Run the in-sandbox unit tests + verify integration tests compile**
 
-Run: `cargo test --test daemon_bridge 2>&1 | tail -25`
-Expected: PASS — 3 tests.
+Run: `cargo test --lib daemon 2>&1 | tail -25`
+Expected: PASS — 2 unit tests (`handle_conn_round_trips_one_command`, `handle_conn_reports_nonzero_exit`). These use `UnixStream::pair()` (socketpair), which the sandbox permits — unlike `UnixListener::bind`.
 
-- [ ] **Step 6: Run the full suite**
+Run: `cargo test --test daemon_bridge --no-run 2>&1 | tail -15`
+Expected: compiles cleanly. The 3 integration tests are `#[ignore]`'d (sandbox blocks `bind`); they run unsandboxed in Task 8's smoke test via `cargo test --test daemon_bridge -- --ignored`.
+
+- [ ] **Step 6: Run the full suite (excluding ignored integration tests)**
 
 Run: `cargo test --quiet 2>&1 | tail -15`
-Expected: PASS — all tests green (config, framing, exec, bridge, daemon_bridge, server).
+Expected: PASS — all non-ignored tests green (config, framing, exec, bridge, daemon unit tests, server). The 3 `tests/daemon_bridge.rs` tests show as `ignored`, not `passed` — that's expected.
 
 - [ ] **Step 7: Run clippy**
 
@@ -1144,6 +1210,17 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"exec_comma
 ```
 
 Expected: a JSON response whose `result.content[0].text` is a JSON `ExecResult` with `stdout` containing `smoke-test` and your username, `exit_code: 0`. This confirms the bridge+daemon end-to-end without the sandbox.
+
+- [ ] **Step 3b: Run the `#[ignore]`'d integration tests unsandboxed**
+
+Still in the non-sandboxed terminal:
+
+```bash
+cd /Users/peiyan_wang/Workspace/mcp-cli-proxy
+cargo test --test daemon_bridge -- --ignored
+```
+
+Expected: 3 tests pass (`daemon_runs_echo_command`, `daemon_reports_nonzero_exit`, `daemon_enforces_timeout`). These were `#[ignore]`'d during Task 6 because the sandbox blocks `UnixListener::bind`; here they run unsandboxed and exercise the full daemon accept loop.
 
 - [ ] **Step 4: SMOKE-TEST THE SANDBOX ASSUMPTION (the critical gate)**
 
