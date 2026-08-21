@@ -40,12 +40,17 @@ jobs:
       - name: Checkout mcp-cli-proxy (for formula template)
         uses: actions/checkout@v4
 
-      - name: Checkout tap repo
-        uses: actions/checkout@v4
-        with:
-          repository: vexornp/homebrew-tap
-          path: homebrew-tap
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      - name: Clone or init tap repo
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          mkdir -p homebrew-tap
+          cd homebrew-tap
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/vexornp/homebrew-tap.git"
+          git fetch origin main && git checkout main || echo "No main branch yet — will create on push"
 
       - name: Generate and push formula
         env:
@@ -61,10 +66,8 @@ jobs:
             Formula/mcp-cli-proxy.rb.template > homebrew-tap/Formula/mcp-cli-proxy.rb
 
           cd homebrew-tap
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/mcp-cli-proxy.rb
           git diff --staged --quiet || {
             git commit -m "Update mcp-cli-proxy to $TAG"
-            git push
+            git push -u origin main || git push -u origin HEAD:main
           }
