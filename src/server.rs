@@ -9,11 +9,12 @@ use rmcp::{
 };
 use std::collections::HashMap;
 use std::future::Future;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use crate::config::ServerConfig;
 use crate::exec::{run_command, ExecConfig, ExecParams};
+use crate::log::resolve_log;
 
 pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     let server_cfg = ServerConfig::resolve()?;
@@ -51,31 +52,6 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     running.waiting().await?;
     tracing::info!("mcp-cli-proxy shutting down (stdin closed)");
     Ok(())
-}
-
-/// Resolve the log directory and open `server.log` for append.
-///
-/// Tries the configured dir first; on any I/O error (e.g. a macOS seatbelt
-/// sandbox denying `~/.config/**`), falls back to a dir under the system temp
-/// dir so startup never dies on an unwritable log location. Returns
-/// `(resolved_dir, Option<File>)`; `None` means even the fallback was
-/// unwritable and log output is dropped via `std::io::sink()`.
-fn resolve_log(configured: &Path) -> (PathBuf, Option<std::fs::File>) {
-    if let Some(file) = open_log(configured) {
-        return (configured.to_path_buf(), Some(file));
-    }
-    let fallback = std::env::temp_dir().join("mcp-cli-proxy").join("logs");
-    let file = open_log(&fallback);
-    (fallback, file)
-}
-
-fn open_log(dir: &Path) -> Option<std::fs::File> {
-    std::fs::create_dir_all(dir).ok()?;
-    std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(dir.join("server.log"))
-        .ok()
 }
 
 struct ProxyServer {
