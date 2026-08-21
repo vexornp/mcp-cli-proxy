@@ -10,14 +10,35 @@ The agent runs in a sandboxed environment where some CLI calls and network reque
 cargo install --path .
 ```
 
-## Run
+## Usage
 
-```sh
-mcp-cli-proxy            # run the stdio MCP server (default)
-mcp-cli-proxy serve      # same thing, explicit
-```
+`mcp-cli-proxy` has two modes that run as separate processes:
 
-The agent host launches this binary as a subprocess and talks JSON-RPC over stdio, exactly like any other stdio MCP server.
+### 1. Daemon (unsandboxed, you start it)
+
+    mcp-cli-proxy daemon
+
+Binds `/tmp/mcp-cli-proxy.sock` (0600) and runs the shell commands the bridge
+forwards to it. Start this in a terminal **before** launching the agent
+(logoscode) that uses the bridge. It stays in the foreground; Ctrl-C stops it
+and removes the socket file.
+
+### 2. Bridge / MCP server (sandboxed, the agent starts it)
+
+    mcp-cli-proxy serve   # or just: mcp-cli-proxy
+
+Speaks MCP over stdio (what the agent spawns) and forwards each
+`exec_command` call to the daemon over the Unix socket. If the daemon is not
+running, it exits nonzero with a message pointing at `mcp-cli-proxy daemon`.
+
+### Why two processes?
+
+The agent (e.g. logoscode) sandboxes every process it spawns, including this
+one. A sandboxed process cannot run host-level commands (network, `curl`,
+`pod install`, ...). The daemon runs outside the sandbox (you start it), so
+the shell commands it executes escape the sandbox. The bridge, which the
+agent spawns, connects to the daemon over `/tmp/mcp-cli-proxy.sock` — a path
+the sandbox's `allowUnixSockets` policy permits.
 
 ## Register with the agent host
 
