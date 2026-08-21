@@ -9,11 +9,6 @@ class McpCliProxy < Formula
     sha256 "@ARM_SHA@"
   end
 
-  on_intel do
-    url "https://github.com/vexornp/mcp-cli-proxy/releases/download/@TAG@/mcp-cli-proxy-x86_64-apple-darwin.tar.gz"
-    sha256 "@INTEL_SHA@"
-  end
-
   def install
     bin.install "mcp-cli-proxy"
   end

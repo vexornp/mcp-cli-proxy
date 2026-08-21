@@ -10,39 +10,30 @@ permissions:
 
 jobs:
   build:
-    strategy:
-      matrix:
-        include:
-          - target: aarch64-apple-darwin
-            runner: macos-14
-          - target: x86_64-apple-darwin
-            runner: macos-13
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Build
         run: cargo build --release
       - name: Package
-        run: tar -czf mcp-cli-proxy-${{ matrix.target }}.tar.gz -C target/release mcp-cli-proxy
+        run: tar -czf mcp-cli-proxy-aarch64-apple-darwin.tar.gz -C target/release mcp-cli-proxy
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
-          files: mcp-cli-proxy-${{ matrix.target }}.tar.gz
+          files: mcp-cli-proxy-aarch64-apple-darwin.tar.gz
 
   publish-formula:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: Download release assets and compute SHA256
+      - name: Download release asset and compute SHA256
         id: sha
         run: |
           gh release download "${{ github.ref_name }}" --repo "${{ github.repository }}" \
-            --pattern "mcp-cli-proxy-*.tar.gz" --dir .
+            --pattern "mcp-cli-proxy-aarch64-apple-darwin.tar.gz" --dir .
           ARM_SHA=$(sha256sum mcp-cli-proxy-aarch64-apple-darwin.tar.gz | cut -d' ' -f1)
-          INTEL_SHA=$(sha256sum mcp-cli-proxy-x86_64-apple-darwin.tar.gz | cut -d' ' -f1)
           echo "arm_sha256=$ARM_SHA" >> "$GITHUB_OUTPUT"
-          echo "intel_sha256=$INTEL_SHA" >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -60,7 +51,6 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
           ARM_SHA: ${{ steps.sha.outputs.arm_sha256 }}
-          INTEL_SHA: ${{ steps.sha.outputs.intel_sha256 }}
         run: |
           VERSION="${TAG#v}"
           mkdir -p homebrew-tap/Formula
@@ -68,7 +58,6 @@ jobs:
             -e "s|@VERSION@|$VERSION|g" \
             -e "s|@TAG@|$TAG|g" \
             -e "s|@ARM_SHA@|$ARM_SHA|g" \
-            -e "s|@INTEL_SHA@|$INTEL_SHA|g" \
             Formula/mcp-cli-proxy.rb.template > homebrew-tap/Formula/mcp-cli-proxy.rb
 
           cd homebrew-tap
