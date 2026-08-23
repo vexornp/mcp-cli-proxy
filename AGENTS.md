@@ -25,7 +25,7 @@ the user to start it.
 
 - If the daemon restarts, the bridge does not reconnect — restart the agent
   (logoscode) to reconnect.
-- Requests are sequential over the single socket (no concurrent in-flight
+- Requests are sequential over the single connection (no concurrent in-flight
   requests) — a deliberate non-goal per the design spec.
 - Localhost TCP only (127.0.0.1:8130). Any local process can connect (no
   auth); intended for a personal dev box. Not network-exposed.
