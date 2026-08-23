@@ -10,7 +10,7 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Command {
     /// Run the stdio MCP server (default). Forwards exec_command calls to the
-    /// daemon over /tmp/mcp-cli-proxy.sock — start `mcp-cli-proxy daemon` first.
+    /// daemon over 127.0.0.1:8130 — start `mcp-cli-proxy daemon` first.
     Serve,
     /// Run the unsandboxed exec daemon. Start this in a separate terminal
     /// before launching logoscode. Binds 127.0.0.1:8130 and runs the
