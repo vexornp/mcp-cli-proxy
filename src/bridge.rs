@@ -1,18 +1,22 @@
+use std::future::Future;
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::pin::Pin;
+
+use thiserror::Error;
+use tokio::net::TcpStream;
+use tokio::sync::Mutex;
+
 use crate::config::ServerConfig;
 use crate::exec::{ExecConfig, ExecError, ExecParams, ExecResult, Executor};
 use crate::framing::{read_frame, write_frame};
-use std::future::Future;
-use std::path::{Path, PathBuf};
-use std::pin::Pin;
-use thiserror::Error;
-use tokio::net::UnixStream;
-use tokio::sync::Mutex;
 
-pub const SOCKET_PATH: &str = "/tmp/mcp-cli-proxy.sock";
+pub const DAEMON_PORT: u16 = 8130;
 
-/// io::Error kinds that indicate the daemon connection dropped mid-call
-/// (peer closed, reset, or broken pipe on write). Maps to the spec's
-/// `daemon connection lost mid-call` message.
+pub const DAEMON_ADDR: SocketAddr = SocketAddr::V4(SocketAddrV4::new(
+    Ipv4Addr::new(127, 0, 0, 1),
+    DAEMON_PORT,
+));
+
 fn is_connection_lost(e: &std::io::Error) -> bool {
     matches!(
         e.kind(),
@@ -25,14 +29,14 @@ fn is_connection_lost(e: &std::io::Error) -> bool {
 
 #[derive(Debug, Error)]
 pub enum BridgeError {
-    #[error("cannot connect to daemon at {path} (is 'mcp-cli-proxy daemon' running?)")]
-    DaemonDown { path: String },
+    #[error("cannot connect to daemon at {addr} (is 'mcp-cli-proxy daemon' running?)")]
+    DaemonDown { addr: SocketAddr },
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }
 
 pub struct DaemonOptions {
-    pub socket_path: PathBuf,
+    pub addr: SocketAddr,
     pub config: ExecConfig,
 }
 
@@ -42,7 +46,7 @@ impl DaemonOptions {
             .map(|c| c.exec)
             .unwrap_or_else(|_| ExecConfig::defaults());
         Self {
-            socket_path: PathBuf::from(SOCKET_PATH),
+            addr: DAEMON_ADDR,
             config,
         }
     }
@@ -50,25 +54,17 @@ impl DaemonOptions {
 
 #[derive(Debug)]
 pub struct RemoteExecutor {
-    stream: Mutex<UnixStream>,
+    stream: Mutex<TcpStream>,
 }
 
-/// Connect to the daemon at `path` and return a `RemoteExecutor`. Maps
-/// missing-socket / connection-refused to `DaemonDown` so the caller can print
-/// the "is 'mcp-cli-proxy daemon' running?" message.
-pub async fn connect(path: &Path) -> Result<RemoteExecutor, BridgeError> {
-    match UnixStream::connect(path).await {
+pub async fn connect(addr: SocketAddr) -> Result<RemoteExecutor, BridgeError> {
+    match TcpStream::connect(addr).await {
         Ok(stream) => Ok(RemoteExecutor {
             stream: Mutex::new(stream),
         }),
-        Err(e)
-            if e.kind() == std::io::ErrorKind::NotFound
-                || e.kind() == std::io::ErrorKind::ConnectionRefused =>
-        {
-            Err(BridgeError::DaemonDown {
-                path: path.display().to_string(),
-            })
-        }
+        Err(e) if e.kind() == std::io::ErrorKind::ConnectionRefused => Err(BridgeError::DaemonDown {
+            addr,
+        }),
         Err(e) => Err(BridgeError::Io(e)),
     }
 }
@@ -97,13 +93,11 @@ impl Executor for RemoteExecutor {
                     return Err(ExecError::DaemonConnectionLost);
                 }
                 Err(_) => {
-                    // Non-connection read errors (e.g. an oversized length
-                    // prefix) are frame parse failures per the spec.
                     return Err(ExecError::BadResponse);
                 }
             };
-            let rpc: Result<ExecResult, String> = serde_json::from_slice(&resp)
-                .map_err(|_| ExecError::BadResponse)?;
+            let rpc: Result<ExecResult, String> =
+                serde_json::from_slice(&resp).map_err(|_| ExecError::BadResponse)?;
             rpc.map_err(ExecError::Spawn)
         })
     }
@@ -111,7 +105,7 @@ impl Executor for RemoteExecutor {
 
 #[cfg(test)]
 impl RemoteExecutor {
-    fn from_stream(stream: UnixStream) -> Self {
+    fn from_stream(stream: TcpStream) -> Self {
         Self {
             stream: Mutex::new(stream),
         }
@@ -122,12 +116,20 @@ impl RemoteExecutor {
 mod tests {
     use super::*;
 
+    async fn tcp_pair() -> (TcpStream, TcpStream) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let client = TcpStream::connect(addr).await.unwrap();
+        let (server, _) = listener.accept().await.unwrap();
+        (client, server)
+    }
+
     #[tokio::test]
     async fn remote_executor_round_trips_one_call() {
-        let (server_sock, client_sock) = UnixStream::pair().unwrap();
+        let (client, server) = tcp_pair().await;
 
-        let server = tokio::spawn(async move {
-            let mut conn = server_sock;
+        let server_task = tokio::spawn(async move {
+            let mut conn = server;
             let req = read_frame(&mut conn).await.unwrap();
             let params: ExecParams = serde_json::from_slice(&req).unwrap();
             assert_eq!(params.command, "echo hi");
@@ -144,7 +146,7 @@ mod tests {
             write_frame(&mut conn, &resp).await.unwrap();
         });
 
-        let exec = RemoteExecutor::from_stream(client_sock);
+        let exec = RemoteExecutor::from_stream(client);
         let params = ExecParams {
             command: "echo hi".into(),
             ..Default::default()
@@ -152,12 +154,12 @@ mod tests {
         let result = exec.exec(params).await.unwrap();
         assert_eq!(result.stdout, "hi\n");
         assert_eq!(result.exit_code, Some(0));
-        server.await.unwrap();
+        server_task.await.unwrap();
     }
 
     #[tokio::test]
-    async fn connect_missing_socket_returns_daemon_down() {
-        let err = connect(Path::new("/tmp/definitely-not-here-mcp-cli-proxy.sock"))
+    async fn connect_refused_returns_daemon_down() {
+        let err = connect(SocketAddr::from(([127, 0, 0, 1], 1)))
             .await
             .unwrap_err();
         assert!(matches!(err, BridgeError::DaemonDown { .. }));

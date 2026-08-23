@@ -1,8 +1,9 @@
-use std::os::unix::fs::PermissionsExt;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
-use tokio::net::{UnixListener, UnixStream};
+use tokio::net::{TcpListener, TcpStream};
 use tokio::signal::unix::{signal, SignalKind};
+use tokio::sync::oneshot;
 
 use crate::bridge::DaemonOptions;
 use crate::config::ServerConfig;
@@ -10,33 +11,28 @@ use crate::exec::{run_command, ExecConfig, ExecParams, ExecResult};
 use crate::framing::{read_frame, write_frame};
 use crate::log::{init_logger, resolve_log};
 
-pub async fn run_daemon(opts: DaemonOptions) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn run_daemon(
+    opts: DaemonOptions,
+    bound_addr_tx: Option<oneshot::Sender<SocketAddr>>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let log_dir_cfg = ServerConfig::resolve()
         .map(|c| c.log_dir)
         .unwrap_or_else(|_| std::env::temp_dir().join("mcp-cli-proxy").join("logs"));
     let (log_dir, log_file) = resolve_log(&log_dir_cfg);
     init_logger(log_file);
+
+    let listener = TcpListener::bind(opts.addr).await?;
+    let bound_addr = listener.local_addr()?;
+    if let Some(tx) = bound_addr_tx {
+        let _ = tx.send(bound_addr);
+    }
     tracing::info!(
-        "mcp-cli-proxy daemon starting: socket={}, log_dir={}",
-        opts.socket_path.display(),
+        "mcp-cli-proxy daemon listening on {}, log_dir={}",
+        bound_addr,
         log_dir.display()
     );
 
-    if opts.socket_path.exists() {
-        tracing::warn!("removing stale socket at {}", opts.socket_path.display());
-        let _ = std::fs::remove_file(&opts.socket_path);
-    }
-    let listener = UnixListener::bind(&opts.socket_path)?;
-    // TOCTOU: a peer could swap the socket file between bind and set_permissions.
-    // Accepted on a single-user Mac; revisit if shared with other users.
-    std::fs::set_permissions(
-        &opts.socket_path,
-        std::fs::Permissions::from_mode(0o600),
-    )?;
-    tracing::info!("daemon listening on {}", opts.socket_path.display());
-
     let config = Arc::new(opts.config);
-    let socket_path = opts.socket_path.clone();
 
     let mut term = signal(SignalKind::terminate())?;
 
@@ -50,12 +46,11 @@ pub async fn run_daemon(opts: DaemonOptions) -> Result<(), Box<dyn std::error::E
         }
     }
 
-    let _ = std::fs::remove_file(&socket_path);
     tracing::info!("daemon stopped");
     Ok(())
 }
 
-async fn accept_loop(listener: &UnixListener, config: Arc<ExecConfig>) {
+async fn accept_loop(listener: &TcpListener, config: Arc<ExecConfig>) {
     loop {
         match listener.accept().await {
             Ok((conn, _)) => {
@@ -74,7 +69,7 @@ async fn accept_loop(listener: &UnixListener, config: Arc<ExecConfig>) {
 }
 
 async fn handle_conn(
-    mut conn: UnixStream,
+    mut conn: TcpStream,
     config: &ExecConfig,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     loop {
@@ -95,14 +90,18 @@ async fn handle_conn(
 mod tests {
     use super::*;
 
-    // handle_conn is testable in-sandbox via UnixStream::pair() (socketpair),
-    // which the sandbox permits — unlike UnixListener::bind (sandbox-blocked).
-    // The full daemon integration tests in tests/daemon_bridge.rs are #[ignore]'d
-    // and run unsandboxed via: cargo test --test daemon_bridge -- --ignored
+    async fn tcp_pair() -> (TcpStream, TcpStream) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let client = TcpStream::connect(addr).await.unwrap();
+        let (server, _) = listener.accept().await.unwrap();
+        (client, server)
+    }
+
     #[tokio::test]
     async fn handle_conn_round_trips_one_command() {
         let config = ExecConfig::defaults();
-        let (mut client, server) = UnixStream::pair().unwrap();
+        let (mut client, server) = tcp_pair().await;
 
         let task = tokio::spawn(async move {
             handle_conn(server, &config).await.unwrap();
@@ -128,7 +127,7 @@ mod tests {
     #[tokio::test]
     async fn handle_conn_reports_nonzero_exit() {
         let config = ExecConfig::defaults();
-        let (mut client, server) = UnixStream::pair().unwrap();
+        let (mut client, server) = tcp_pair().await;
 
         let task = tokio::spawn(async move {
             handle_conn(server, &config).await.unwrap();

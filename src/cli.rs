@@ -23,7 +23,7 @@ pub async fn run(cmd: Option<Command>) -> Result<(), Box<dyn std::error::Error>>
         None | Some(Command::Serve) => crate::server::run_server().await,
         Some(Command::Daemon) => {
             let opts = crate::bridge::DaemonOptions::defaults();
-            crate::daemon::run_daemon(opts)
+            crate::daemon::run_daemon(opts, None)
                 .await
                 .map_err(|e| -> Box<dyn std::error::Error> { e })
         }

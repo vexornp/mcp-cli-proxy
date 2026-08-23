@@ -12,7 +12,7 @@ use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::bridge::{connect, SOCKET_PATH};
+use crate::bridge::{connect, DAEMON_ADDR};
 use crate::config::ServerConfig;
 use crate::exec::{Executor, ExecParams};
 use crate::log::{init_logger, resolve_log};
@@ -38,7 +38,7 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         server_cfg.exec.max_timeout_secs
     );
 
-    let executor: Arc<dyn Executor> = match connect(std::path::Path::new(SOCKET_PATH)).await {
+    let executor: Arc<dyn Executor> = match connect(DAEMON_ADDR).await {
         Ok(remote) => Arc::new(remote),
         Err(e) => {
             eprintln!("mcp-cli-proxy: {e}");
