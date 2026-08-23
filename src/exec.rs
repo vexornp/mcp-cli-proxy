@@ -38,8 +38,8 @@ impl ExecConfig {
     pub fn defaults() -> Self {
         Self {
             output_cap_bytes: 102_400,
-            default_timeout_secs: 120,
-            max_timeout_secs: 1800,
+            default_timeout_secs: 3600,
+            max_timeout_secs: 3600,
         }
     }
 }

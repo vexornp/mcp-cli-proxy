@@ -13,8 +13,8 @@ impl ServerConfig {
     /// Resolve config: built-in defaults <- config file <- environment variables.
     pub fn resolve() -> Result<Self, String> {
         let mut output_cap_bytes: usize = 102_400;
-        let mut default_timeout_secs: u64 = 120;
-        let mut max_timeout_secs: u64 = 1800;
+        let mut default_timeout_secs: u64 = 3600;
+        let mut max_timeout_secs: u64 = 3600;
         let mut log_dir: PathBuf = default_log_dir();
 
         let cfg_path = config_file_path();

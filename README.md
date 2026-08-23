@@ -81,7 +81,7 @@ Add `mcp-cli-proxy` to your host's MCP config. Example (logoscode-style):
 | `command` | string | yes | — | Shell command, run via `sh -c`. Pipes/globs/redirects work. |
 | `cwd` | string | no | proxy's cwd | Working directory. |
 | `env` | object<string,string> | no | — | Extra env vars, merged over the inherited environment. |
-| `timeout_secs` | integer | no | 120 | Per-call timeout. Clamped to `max_timeout_secs` (1800). |
+| `timeout_secs` | integer | no | 3600 | Per-call timeout. Clamped to `max_timeout_secs` (3600). |
 | `stdin` | string | no | — | Bytes piped to stdin. |
 
 Returns JSON: `exit_code` (int|null), `stdout`, `stderr`, `stdout_truncated`, `stderr_truncated`, `timed_out`, `duration_ms`. Each stream is truncated at `output_cap_bytes` (default 100KB).
@@ -94,8 +94,8 @@ Config file (line-based `key = value`, `#` comments) at `$XDG_CONFIG_HOME/mcp-cl
 
 ```
 output_cap_bytes = 102400
-default_timeout_secs = 120
-max_timeout_secs = 1800
+default_timeout_secs = 3600
+max_timeout_secs = 3600
 log_dir = /Users/me/.config/mcp-cli-proxy/logs
 ```
 
