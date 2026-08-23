@@ -13,7 +13,7 @@ pub enum Command {
     /// daemon over /tmp/mcp-cli-proxy.sock — start `mcp-cli-proxy daemon` first.
     Serve,
     /// Run the unsandboxed exec daemon. Start this in a separate terminal
-    /// before launching logoscode. Binds /tmp/mcp-cli-proxy.sock and runs the
+    /// before launching logoscode. Binds 127.0.0.1:8130 and runs the
     /// shell commands the bridge forwards to it.
     Daemon,
 }

@@ -16,10 +16,10 @@ separate terminal (not under logoscode) with:
 
     mcp-cli-proxy daemon
 
-It binds `/tmp/mcp-cli-proxy.sock` (0600) and stays in the foreground. If
-`exec_command` fails with "cannot connect to daemon at
-/tmp/mcp-cli-proxy.sock (is 'mcp-cli-proxy daemon' running?)", the daemon is
-not running — ask the user to start it.
+It listens on `127.0.0.1:8130` and stays in the foreground. If
+`exec_command` fails with "cannot connect to daemon at 127.0.0.1:8130
+(is 'mcp-cli-proxy daemon' running?)", the daemon is not running — ask
+the user to start it.
 
 ## Known limitations
 
@@ -27,7 +27,8 @@ not running — ask the user to start it.
   (logoscode) to reconnect.
 - Requests are sequential over the single socket (no concurrent in-flight
   requests) — a deliberate non-goal per the design spec.
-- Unix-only (no Windows named-pipe support).
+- Localhost TCP only (127.0.0.1:8130). Any local process can connect (no
+  auth); intended for a personal dev box. Not network-exposed.
 
 The following MCP servers are configured but unavailable:
 - logos_code_remote_112: MCP error -32000: Connection closed

@@ -1,3 +1,5 @@
+> **TRANSPORT SUPERSEDED (2026-08-23):** The Unix-socket transport described here is sandbox-blocked. The active transport is localhost TCP (see `docs/superpowers/plans/2026-08-23-daemon-bridge-tcp.md`). Non-transport sections (framing, Executor trait, error model) below remain authoritative.
+
 # Daemon + Bridge: forwarding commands to an unsandboxed host process
 
 **Date:** 2026-08-21

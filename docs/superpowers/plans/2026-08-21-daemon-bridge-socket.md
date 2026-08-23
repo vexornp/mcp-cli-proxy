@@ -1,3 +1,5 @@
+> **SUPERSEDED (2026-08-23):** The Unix-socket transport in this plan is sandbox-blocked (macOS seatbelt blocks `UnixStream::connect` with `EPERM`). The active plan is `2026-08-23-daemon-bridge-tcp.md` (localhost TCP). This file is kept for history.
+
 # Daemon + Bridge Socket Forwarding Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
