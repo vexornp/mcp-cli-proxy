@@ -26,6 +26,26 @@ pub async fn run_daemon(
     if let Some(tx) = bound_addr_tx {
         let _ = tx.send(bound_addr);
     }
+    let log_path = log_dir.join("server.log");
+    let cfg = &opts.config;
+    eprintln!(
+        "mcp-cli-proxy daemon\n  \
+         listening:  {addr}\n  \
+         log file:   {log}\n  \
+         pid:        {pid}\n  \
+         exec limits (enforced here):\n    \
+           output cap:       {cap} bytes ({cap_kb} KB)\n    \
+           default timeout:  {def}s\n    \
+           max timeout:      {max}s\n  \
+         stop:       Ctrl-C or SIGTERM",
+        addr = bound_addr,
+        log = log_path.display(),
+        pid = std::process::id(),
+        cap = cfg.output_cap_bytes,
+        cap_kb = cfg.output_cap_bytes / 1024,
+        def = cfg.default_timeout_secs,
+        max = cfg.max_timeout_secs,
+    );
     tracing::info!(
         "mcp-cli-proxy daemon listening on {}, log_dir={}",
         bound_addr,
