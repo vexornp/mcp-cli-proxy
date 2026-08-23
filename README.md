@@ -6,6 +6,26 @@ The agent runs in a sandboxed environment where some CLI calls and network reque
 
 ## Install
 
+### Homebrew (macOS)
+
+```sh
+brew install vexornp/homebrew-tap/mcp-cli-proxy
+```
+
+Or, to tap the repo first:
+
+```sh
+brew tap vexornp/homebrew-tap
+brew install mcp-cli-proxy
+```
+
+Prebuilt `aarch64-apple-darwin` binaries are published on each release; the
+formula auto-updates when a new tag is cut.
+
+### From source
+
+Requires Rust toolchain.
+
 ```sh
 cargo install --path .
 ```
