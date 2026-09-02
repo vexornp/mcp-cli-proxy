@@ -11,7 +11,7 @@ The user's AI agent runs in a **sandboxed environment** where some CLI calls and
 network requests are blocked. The agent still needs to perform those operations
 (e.g. `git` over network, `curl`, builds, `pod install`).
 
-The agent host (logoscode / Claude Desktop / similar) launches MCP servers as
+The agent host (your agent / Claude Desktop / similar) launches MCP servers as
 **local subprocesses on the user's PC**. Because the *host* runs on the PC, those
 subprocesses run outside the agent's bash/network sandbox. `mcp-cli-proxy`
 exploits this: it is an MCP server that exposes a generic `exec_command` tool.
@@ -59,7 +59,7 @@ sandboxed) and returns the result.
 │  Agent (sandboxed bash,   │        │  mcp-cli-proxy  (your PC, NOT    │
 │  blocked network)         │        │  sandboxed)                      │
 │                           │  stdio │                                  │
-│  host (logoscode/etc.) ───┼────────┼─▶ rmcp ServerHandler             │
+│  host (the agent/etc.) ───┼────────┼─▶ rmcp ServerHandler             │
 │  launches proxy as a      │ (JSON- │      │                            │
 │  local subprocess on PC   │  RPC)  │      ▼                            │
 │                           │        │  exec::run_command()              │
@@ -330,7 +330,7 @@ single host-side path. E.g. instead of a sandboxed `xcode-mcp`, the agent runs
 ### Out of scope
 
 Automatic interception/rerouting of failed bash calls. That is agent-**host**
-behavior (logoscode / Claude Desktop level), not something the proxy MCP can
+behavior (your agent / Claude Desktop level), not something the proxy MCP can
 control. The proxy just offers the tool; routing is the agent's job, guided by
 the three signals above.
 

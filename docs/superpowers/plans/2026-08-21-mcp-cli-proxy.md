@@ -1191,7 +1191,7 @@ git commit -m "feat(server): rmcp ServerHandler with exec_command tool + validat
 
 A generic-executor MCP server that runs arbitrary shell commands on the host PC, bypassing the agent's sandbox.
 
-The agent runs in a sandboxed environment where some CLI calls and network requests are blocked. The agent **host** (logoscode, Claude Desktop, etc.) launches MCP servers as local subprocesses on your PC — outside the sandbox. `mcp-cli-proxy` exposes a single `exec_command` tool the agent can call to run commands on your PC.
+The agent runs in a sandboxed environment where some CLI calls and network requests are blocked. The agent **host** (your agent, Claude Desktop, etc.) launches MCP servers as local subprocesses on your PC — outside the sandbox. `mcp-cli-proxy` exposes a single `exec_command` tool the agent can call to run commands on your PC.
 
 ## Install
 
@@ -1210,7 +1210,7 @@ The agent host launches this binary as a subprocess and talks JSON-RPC over stdi
 
 ## Register with the agent host
 
-Add `mcp-cli-proxy` to your host's MCP config. Example (logoscode-style):
+Add `mcp-cli-proxy` to your host's MCP config. Example (typical agent config):
 
 ```json
 {

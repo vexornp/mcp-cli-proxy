@@ -7,15 +7,15 @@
 
 ## Problem
 
-logoscode runs every local MCP server inside a macOS seatbelt (srt) sandbox.
-The sandbox policy (`~/.cache/logoscode/sandbox/srt-settings.json`) allows
+The agent runs every local MCP server inside a macOS seatbelt (srt) sandbox.
+The sandbox policy (`~/.cache/<agent>/sandbox/srt-settings.json`) allows
 `/tmp/mcp-*` in `allowUnixSockets` and `/tmp` in `allowWrite`, but denies
 writes to `~/.config/**` and restricts outbound TCP to an allowlist of
 internal domains (no `localhost`).
 
 `mcp-cli-proxy`'s purpose is to run `sh -c` commands on the host *outside*
 the sandbox (per `AGENTS.md`: "for git operations that need network, curl,
-builds, pod install"). But because logoscode spawns the process, the seatbelt
+builds, pod install"). But because the agent spawns the process, the seatbelt
 profile is inherited across `exec`, so the proxy's own `sh -c` children
 (`src/exec.rs:67-83`) are sandboxed too. The proxy cannot escape by itself.
 
@@ -27,14 +27,14 @@ proxy cannot serve its intended purpose as an unsandboxed escape hatch.**
 ## Goal
 
 Forward `exec_command` invocations to an unsandboxed daemon process that the
-user starts manually, so `sh -c` actually runs on the host. logoscode's
+user starts manually, so `sh -c` actually runs on the host. The agent's
 existing `mcp-cli-proxy` invocation (default stdio MCP server) keeps working
 unchanged from the gateway's perspective; it becomes a thin bridge that
 forwards calls over a sandbox-allowed Unix socket.
 
 ## Constraints
 
-- logoscode cannot spawn the unsandboxed daemon (seatbelt inherits on `exec`).
+- The agent cannot spawn the unsandboxed daemon (seatbelt inherits on `exec`).
   → The daemon must be started by the user (or launchd, out of scope here).
 - The sandbox allows `UnixStream::connect` to paths matching `/tmp/mcp-*`
   (`allowUnixSockets`), and `/tmp` is read/write-allowed.
@@ -45,7 +45,7 @@ forwards calls over a sandbox-allowed Unix socket.
   → Socket path must match the `/tmp/mcp-*` allowlist entry.
 - No gateway config change.
   → Default socket path is a constant both sides agree on; no env wiring
-    required from logoscode (it already passes no special env to the server).
+    required from the agent (it already passes no special env to the server).
 
 ## Non-goals
 
@@ -61,7 +61,7 @@ forwards calls over a sandbox-allowed Unix socket.
 ## Architecture
 
 ```
-logoscode (sandboxed)                   user's machine (unsandboxed)
+the agent (sandboxed)                   user's machine (unsandboxed)
 ┌──────────────────────────┐            ┌─────────────────────────────────┐
 │  mcp-cli-proxy           │  ExecParams │  mcp-cli-proxy daemon           │
 │  (bridge, default mode)  │ ──────────► │  binds /tmp/mcp-cli-proxy.sock  │
@@ -229,7 +229,7 @@ into/out of the frame payload.
 1. **Sandbox blocks `UnixStream::connect` to `/tmp/mcp-*`.** Mitigation: the
    early smoke test above. If blocked, fallback options are limited (the
    gateway would need a per-server "no sandbox" option, which doesn't exist
-   today) — the design would be blocked on a logoscode-side change.
+   today) — the design would be blocked on an agent-side change.
 2. **rmcp `with_writer` + a custom `AsyncWrite` socket adapter.** Not needed
    here (the bridge owns rmcp over stdio, not over the socket), so this risk
    is avoided by the architecture choice.

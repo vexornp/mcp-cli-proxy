@@ -12,7 +12,7 @@
 
 ## Why the change (Discovery)
 
-The logoscode macOS seatbelt sandbox blocks `UnixStream::connect()` to `/tmp/mcp-*` with `EPERM` (errno 1), despite the `allowUnixSockets: ["/tmp/mcp-*"]` policy. Confirmed two ways: (1) the sandboxed bridge prints `mcp-cli-proxy: io error: Operation not permitted (os error 1)` and exits 1; (2) a raw Python `socket.connect()` to the live socket returns `EPERM`. The same sandbox **permits** localhost TCP: `socket.connect(('127.0.0.1', N))` returns `ECONNREFUSED` (errno 61, "nothing listening") not `EPERM`, and `socket.bind(('127.0.0.1', N))` + `listen()` succeed (policy `allowLocalBinding: true`). TCP is the viable transport.
+The agent's macOS seatbelt sandbox blocks `UnixStream::connect()` to `/tmp/mcp-*` with `EPERM` (errno 1), despite the `allowUnixSockets: ["/tmp/mcp-*"]` policy. Confirmed two ways: (1) the sandboxed bridge prints `mcp-cli-proxy: io error: Operation not permitted (os error 1)` and exits 1; (2) a raw Python `socket.connect()` to the live socket returns `EPERM`. The same sandbox **permits** localhost TCP: `socket.connect(('127.0.0.1', N))` returns `ECONNREFUSED` (errno 61, "nothing listening") not `EPERM`, and `socket.bind(('127.0.0.1', N))` + `listen()` succeed (policy `allowLocalBinding: true`). TCP is the viable transport.
 
 ## Global Constraints
 
@@ -622,7 +622,7 @@ Change the prerequisite paragraph from:
 
 ```
 **Prerequisite:** the unsandboxed daemon must be running. Start it in a
-separate terminal (not under logoscode) with:
+separate terminal (not under the agent) with:
 
     mcp-cli-proxy daemon
 
@@ -636,7 +636,7 @@ to:
 
 ```
 **Prerequisite:** the unsandboxed daemon must be running. Start it in a
-separate terminal (not under logoscode) with:
+separate terminal (not under the agent) with:
 
     mcp-cli-proxy daemon
 
@@ -657,7 +657,7 @@ In "### 1. Daemon", change:
 ```
 Binds `/tmp/mcp-cli-proxy.sock` (0600) and runs the shell commands the bridge
 forwards to it. Start this in a terminal **before** launching the agent
-(logoscode) that uses the bridge. It stays in the foreground; Ctrl-C stops it
+that uses the bridge. It stays in the foreground; Ctrl-C stops it
 and removes the socket file.
 ```
 
@@ -665,8 +665,8 @@ to:
 
 ```
 Listens on `127.0.0.1:8130` and runs the shell commands the bridge forwards
-to it. Start this in a terminal **before** launching the agent (logoscode)
-that uses the bridge. It stays in the foreground; Ctrl-C stops it.
+to it. Start this in a terminal **before** launching the agent that uses the
+bridge. It stays in the foreground; Ctrl-C stops it.
 ```
 
 In "### 2. Bridge / MCP server", change `exits nonzero with a message pointing at 'mcp-cli-proxy daemon'.` — keep it (still accurate).
@@ -674,7 +674,7 @@ In "### 2. Bridge / MCP server", change `exits nonzero with a message pointing a
 In "### Why two processes?", change:
 
 ```
-The agent (e.g. logoscode) sandboxes every process it spawns, including this
+The agent sandboxes every process it spawns, including this
 one. A sandboxed process cannot run host-level commands (network, `curl`,
 `pod install`, ...). The daemon runs outside the sandbox (you start it), so
 the shell commands it executes escape the sandbox. The bridge, which the
@@ -685,7 +685,7 @@ the sandbox's `allowUnixSockets` policy permits.
 to:
 
 ```
-The agent (e.g. logoscode) sandboxes every process it spawns, including this
+The agent sandboxes every process it spawns, including this
 one. A sandboxed process cannot run host-level commands (network, `curl`,
 `pod install`, ...). The daemon runs outside the sandbox (you start it), so
 the shell commands it executes escape the sandbox. The bridge, which the

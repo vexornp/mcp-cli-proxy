@@ -2,7 +2,7 @@
 
 A generic-executor MCP server that runs arbitrary shell commands on the host PC, bypassing the agent's sandbox.
 
-The agent runs in a sandboxed environment where some CLI calls and network requests are blocked. The agent **host** (logoscode, Claude Desktop, etc.) launches MCP servers as local subprocesses on your PC — outside the sandbox. `mcp-cli-proxy` exposes a single `exec_command` tool the agent can call to run commands on your PC.
+The agent runs in a sandboxed environment where some CLI calls and network requests are blocked. The agent **host** (your agent, Claude Desktop, etc.) launches MCP servers as local subprocesses on your PC — outside the sandbox. `mcp-cli-proxy` exposes a single `exec_command` tool the agent can call to run commands on your PC.
 
 ## Install
 
@@ -39,8 +39,8 @@ cargo install --path .
     mcp-cli-proxy daemon
 
 Listens on `127.0.0.1:8130` and runs the shell commands the bridge forwards
-to it. Start this in a terminal **before** launching the agent (logoscode)
-that uses the bridge. It stays in the foreground; Ctrl-C stops it.
+to it. Start this in a terminal **before** launching the agent that uses the
+bridge. It stays in the foreground; Ctrl-C stops it.
 
 ### 2. Bridge / MCP server (sandboxed, the agent starts it)
 
@@ -52,7 +52,7 @@ running, it exits nonzero with a message pointing at `mcp-cli-proxy daemon`.
 
 ### Why two processes?
 
-The agent (e.g. logoscode) sandboxes every process it spawns, including this
+The agent sandboxes every process it spawns, including this
 one. A sandboxed process cannot run host-level commands (network, `curl`,
 `pod install`, ...). The daemon runs outside the sandbox (you start it), so
 the shell commands it executes escape the sandbox. The bridge, which the
@@ -62,7 +62,7 @@ but blocks Unix domain sockets.
 
 ## Register with the agent host
 
-Add `mcp-cli-proxy` to your host's MCP config. Example (logoscode-style):
+Add `mcp-cli-proxy` to your host's MCP config. Example (typical agent config):
 
 ```json
 {
@@ -110,7 +110,7 @@ This proxy is **unrestricted** by design — it runs any command, any cwd, on yo
 - **No reconnect after daemon restart.** The bridge holds a single persistent
   connection to the daemon for its lifetime. If the daemon restarts, the bridge
   keeps using the dead connection and every `exec_command` fails until the
-  agent (logoscode) is restarted — restart the agent to reconnect.
+  agent is restarted — restart the agent to reconnect.
 - **Sequential requests.** Calls are serialized over one socket (no concurrent
   in-flight requests). This is a deliberate non-goal per the design spec.
 - **Localhost TCP only.** Listens on `127.0.0.1:8130`. Any local process can

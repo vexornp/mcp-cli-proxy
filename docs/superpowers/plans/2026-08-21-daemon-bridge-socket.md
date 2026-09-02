@@ -6,13 +6,13 @@
 
 **Goal:** Forward `exec_command` calls from the sandboxed `mcp-cli-proxy` MCP server (bridge) to an unsandboxed `mcp-cli-proxy daemon` process over a Unix socket at `/tmp/mcp-cli-proxy.sock`, so `sh -c` actually runs on the host.
 
-**Architecture:** Two modes in one binary. The bridge (default `serve` mode, sandboxed by logoscode) owns the rmcp/MCP stdio layer and forwards `ExecParams` over a persistent `UnixStream`. The daemon (new `daemon` subcommand, started manually by the user, unsandboxed) binds the socket, runs `sh -c` via the existing `run_command`, and returns `ExecResult`. A length-prefixed JSON frame protocol carries requests/responses. An `Executor` trait abstracts "run a command" so `dispatch` is agnostic to local vs. remote execution.
+**Architecture:** Two modes in one binary. The bridge (default `serve` mode, sandboxed by the agent) owns the rmcp/MCP stdio layer and forwards `ExecParams` over a persistent `UnixStream`. The daemon (new `daemon` subcommand, started manually by the user, unsandboxed) binds the socket, runs `sh -c` via the existing `run_command`, and returns `ExecResult`. A length-prefixed JSON frame protocol carries requests/responses. An `Executor` trait abstracts "run a command" so `dispatch` is agnostic to local vs. remote execution.
 
 **Tech Stack:** Rust (edition 2021, MSRV 1.97), tokio (async runtime + `net` feature for Unix sockets), rmcp 3.1.3 (MCP stdio server, unchanged), serde_json (wire framing), clap 4 (CLI subcommands), thiserror 2 (error enums).
 
 ## Global Constraints
 
-- Socket path constant: `/tmp/mcp-cli-proxy.sock` (matches the sandbox `allowUnixSockets` glob `/tmp/mcp-*`; do not change without re-checking `~/.cache/logoscode/sandbox/srt-settings.json`).
+- Socket path constant: `/tmp/mcp-cli-proxy.sock` (matches the sandbox `allowUnixSockets` glob `/tmp/mcp-*`; do not change without re-checking `~/.cache/<agent>/sandbox/srt-settings.json`).
 - Socket file permissions: `0600` (owner-only connect/bind).
 - No silent in-process fallback when the daemon is down — the bridge must exit nonzero with a message naming `mcp-cli-proxy daemon`.
 - No localhost TCP (not in sandbox `allowedDomains`); Unix socket only.
@@ -1092,7 +1092,7 @@ pub enum Command {
     /// daemon over /tmp/mcp-cli-proxy.sock — start `mcp-cli-proxy daemon` first.
     Serve,
     /// Run the unsandboxed exec daemon. Start this in a separate terminal
-    /// before launching logoscode. Binds /tmp/mcp-cli-proxy.sock and runs the
+    /// before launching the agent. Binds /tmp/mcp-cli-proxy.sock and runs the
     /// shell commands the bridge forwards to it.
     Daemon,
 }
@@ -1178,7 +1178,7 @@ git commit -m "feat: serve mode forwards to daemon via RemoteExecutor; add daemo
 - Modify: `AGENTS.md`
 - Modify: `README.md`
 
-**Interfaces:** None (verification + docs). This is the risk-mitigation gate from the spec: confirm the logoscode seatbelt actually permits `UnixStream::connect` to a `/tmp/mcp-*` socket. If it does not, STOP and report — the design is blocked on a logoscode-side change (per spec Risk #1).
+**Interfaces:** None (verification + docs). This is the risk-mitigation gate from the spec: confirm the agent's seatbelt actually permits `UnixStream::connect` to a `/tmp/mcp-*` socket. If it does not, STOP and report — the design is blocked on an agent-side change (per spec Risk #1).
 
 - [ ] **Step 1: Build the release binary**
 
@@ -1187,7 +1187,7 @@ Expected: clean build, binary at `target/debug/mcp-cli-proxy`.
 
 - [ ] **Step 2: Start the daemon in a separate terminal**
 
-In a new terminal (NOT under logoscode):
+In a new terminal (NOT under the agent):
 
 ```bash
 cd /Users/peiyan_wang/Workspace/mcp-cli-proxy
@@ -1204,7 +1204,7 @@ Expected: `srw-------` (socket, 0600, owned by your user). Leave this terminal o
 
 - [ ] **Step 3: Verify the bridge connects and runs an unsandboxed command**
 
-In another terminal (also NOT under logoscode, to first confirm the bridge+daemon pair works outside any sandbox):
+In another terminal (also NOT under the agent, to first confirm the bridge+daemon pair works outside any sandbox):
 
 ```bash
 cd /Users/peiyan_wang/Workspace/mcp-cli-proxy
@@ -1226,13 +1226,13 @@ Expected: 3 tests pass (`daemon_runs_echo_command`, `daemon_reports_nonzero_exit
 
 - [ ] **Step 4: SMOKE-TEST THE SANDBOX ASSUMPTION (the critical gate)**
 
-Now exercise the path logoscode actually uses: have logoscode spawn `mcp-cli-proxy serve` (sandboxed) and call `exec_command` on a command the sandbox would normally block.
+Now exercise the path the agent actually uses: have the agent spawn `mcp-cli-proxy serve` (sandboxed) and call `exec_command` on a command the sandbox would normally block.
 
-In the logoscode session, ask: "Use the exec_command MCP tool to run `curl -s -o /dev/null -w '%{http_code}' https://example.com`."
+In the agent session, ask: "Use the exec_command MCP tool to run `curl -s -o /dev/null -w '%{http_code}' https://example.com`."
 
 Expected (success — sandbox allows the socket): the tool returns an `ExecResult` with `exit_code: 0` and `stdout: "200\n"`. This proves the bridge connected to the daemon over the sandbox-allowed socket and the daemon ran `curl` unsandboxed.
 
-Expected (failure — sandbox blocks the socket): the `exec_command` tool fails with the daemon-down message `mcp-cli-proxy: cannot connect to daemon at /tmp/mcp-cli-proxy.sock (is 'mcp-cli-proxy daemon' running?)` EVEN THOUGH the daemon is running (confirmed in Step 2). If this happens, STOP — the sandbox blocks `UnixStream::connect` to `/tmp/mcp-*` despite the `allowUnixSockets` entry. Report this to the user; the daemon+bridge design cannot work without a logoscode-side change (a per-server "no sandbox" option, which does not currently exist).
+Expected (failure — sandbox blocks the socket): the `exec_command` tool fails with the daemon-down message `mcp-cli-proxy: cannot connect to daemon at /tmp/mcp-cli-proxy.sock (is 'mcp-cli-proxy daemon' running?)` EVEN THOUGH the daemon is running (confirmed in Step 2). If this happens, STOP — the sandbox blocks `UnixStream::connect` to `/tmp/mcp-*` despite the `allowUnixSockets` entry. Report this to the user; the daemon+bridge design cannot work without an agent-side change (a per-server "no sandbox" option, which does not currently exist).
 
 - [ ] **Step 5: Document `daemon` usage in `AGENTS.md`**
 
@@ -1251,7 +1251,7 @@ so pipes, globs, and redirects work. It returns stdout, stderr, and exit_code
 as JSON.
 
 **Prerequisite:** the unsandboxed daemon must be running. Start it in a
-separate terminal (not under logoscode) with:
+separate terminal (not under the agent) with:
 
     mcp-cli-proxy daemon
 
@@ -1259,12 +1259,6 @@ It binds `/tmp/mcp-cli-proxy.sock` (0600) and stays in the foreground. If
 `exec_command` fails with "cannot connect to daemon at
 /tmp/mcp-cli-proxy.sock (is 'mcp-cli-proxy daemon' running?)", the daemon is
 not running — ask the user to start it.
-
-The following MCP servers are configured but unavailable:
-- logos_code_remote_112: MCP error -32000: Connection closed
-
-If the user needs these tools, offer to login by calling the `sso_login` tool with the appropriate domain.
-A browser will open for SSO login. After login succeeds, the tools will be available immediately.
 ```
 
 - [ ] **Step 6: Document `daemon` usage in `README.md`**
@@ -1282,7 +1276,7 @@ Read the current `README.md`, then add a "Usage" section (or update the existing
 
 Binds `/tmp/mcp-cli-proxy.sock` (0600) and runs the shell commands the bridge
 forwards to it. Start this in a terminal **before** launching the agent
-(logoscode) that uses the bridge. It stays in the foreground; Ctrl-C stops it
+that uses the bridge. It stays in the foreground; Ctrl-C stops it
 and removes the socket file.
 
 ### 2. Bridge / MCP server (sandboxed, the agent starts it)
@@ -1295,7 +1289,7 @@ running, it exits nonzero with a message pointing at `mcp-cli-proxy daemon`.
 
 ### Why two processes?
 
-The agent (e.g. logoscode) sandboxes every process it spawns, including this
+The agent sandboxes every process it spawns, including this
 one. A sandboxed process cannot run host-level commands (network, `curl`,
 `pod install`, ...). The daemon runs outside the sandbox (you start it), so
 the shell commands it executes escape the sandbox. The bridge, which the
@@ -1314,7 +1308,7 @@ git commit -m "docs: document daemon+bridge two-process usage and sandbox ration
 
 If Step 4 succeeded: the implementation is complete — `exec_command` now reaches the host unsandboxed. Summarize for the user.
 
-If Step 4 failed: do NOT mark the plan complete. Report that the sandbox blocks the socket connection and that the daemon+bridge cannot function without a logoscode-side change. Leave the code committed (it's correct; the constraint is external).
+If Step 4 failed: do NOT mark the plan complete. Report that the sandbox blocks the socket connection and that the daemon+bridge cannot function without an agent-side change. Leave the code committed (it's correct; the constraint is external).
 
 ---
 
