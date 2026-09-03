@@ -14,26 +14,44 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
       - name: Build
-        run: cargo build --release
+        run: |
+          cargo build --release
+          cargo build --release --target x86_64-apple-darwin
       - name: Package
-        run: tar -czf mcp-cli-proxy-aarch64-apple-darwin.tar.gz -C target/release mcp-cli-proxy
+        run: |
+          tar -czf mcp-cli-proxy-aarch64-apple-darwin.tar.gz -C target/release mcp-cli-proxy
+          tar -czf mcp-cli-proxy-x86_64-apple-darwin.tar.gz -C target/x86_64-apple-darwin/release mcp-cli-proxy
+      - name: Smoke-test x86_64 binary under Rosetta
+        run: |
+          file target/x86_64-apple-darwin/release/mcp-cli-proxy
+          file target/x86_64-apple-darwin/release/mcp-cli-proxy | grep -q "x86_64"
+          softwareupdate --install-rosetta --agree-to-license || true
+          arch -x86_64 target/x86_64-apple-darwin/release/mcp-cli-proxy --version
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
-          files: mcp-cli-proxy-aarch64-apple-darwin.tar.gz
+          files: |
+            mcp-cli-proxy-aarch64-apple-darwin.tar.gz
+            mcp-cli-proxy-x86_64-apple-darwin.tar.gz
 
   publish-formula:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: Download release asset and compute SHA256
+      - name: Download release assets and compute SHA256
         id: sha
         run: |
           gh release download "${{ github.ref_name }}" --repo "${{ github.repository }}" \
-            --pattern "mcp-cli-proxy-aarch64-apple-darwin.tar.gz" --dir .
+            --pattern "mcp-cli-proxy-aarch64-apple-darwin.tar.gz" \
+            --pattern "mcp-cli-proxy-x86_64-apple-darwin.tar.gz" \
+            --dir .
           ARM_SHA=$(sha256sum mcp-cli-proxy-aarch64-apple-darwin.tar.gz | cut -d' ' -f1)
+          X86_SHA=$(sha256sum mcp-cli-proxy-x86_64-apple-darwin.tar.gz | cut -d' ' -f1)
           echo "arm_sha256=$ARM_SHA" >> "$GITHUB_OUTPUT"
+          echo "x86_sha256=$X86_SHA" >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -56,6 +74,7 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
           ARM_SHA: ${{ steps.sha.outputs.arm_sha256 }}
+          X86_SHA: ${{ steps.sha.outputs.x86_sha256 }}
         run: |
           VERSION="${TAG#v}"
           mkdir -p homebrew-tap/Formula
@@ -63,6 +82,7 @@ jobs:
             -e "s|@VERSION@|$VERSION|g" \
             -e "s|@TAG@|$TAG|g" \
             -e "s|@ARM_SHA@|$ARM_SHA|g" \
+            -e "s|@X86_SHA@|$X86_SHA|g" \
             Formula/mcp-cli-proxy.rb.template > homebrew-tap/Formula/mcp-cli-proxy.rb
 
           cd homebrew-tap

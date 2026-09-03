@@ -19,8 +19,8 @@ brew tap vexornp/homebrew-tap
 brew install mcp-cli-proxy
 ```
 
-Prebuilt `aarch64-apple-darwin` binaries are published on each release; the
-formula auto-updates when a new tag is cut.
+Prebuilt `aarch64-apple-darwin` and `x86_64-apple-darwin` binaries are published
+on each release; the formula auto-updates when a new tag is cut.
 
 ### From source
 
