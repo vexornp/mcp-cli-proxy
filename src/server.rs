@@ -7,6 +7,7 @@ use rmcp::{
     service::{MaybeSendFuture, RequestContext},
     RoleServer, ServerHandler, ServiceExt,
 };
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::future::Future;
 use std::path::Path;
@@ -82,6 +83,10 @@ impl ServerHandler for ProxyServer {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
             .with_protocol_version(ProtocolVersion::V_2024_11_05)
             .with_server_info(Implementation::new("mcp-cli-proxy", env!("CARGO_PKG_VERSION")))
+    }
+
+    fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
+        Cow::Borrowed(&[ProtocolVersion::V_2024_11_05])
     }
 
     fn list_tools(
@@ -212,5 +217,22 @@ mod tests {
             }
             other => panic!("unexpected response variant: {other:?}"),
         }
+    }
+
+    #[test]
+    fn protocol_negotiation_capped_at_2024_11_05() {
+        let handler = ProxyServer {
+            executor: Arc::new(LocalExecutor::new(ExecConfig::defaults())),
+        };
+        let supported = handler.supported_protocol_versions();
+        assert!(
+            !supported.iter().any(|v| v.as_str() >= ProtocolVersion::V_2026_07_28.as_str()),
+            "must not negotiate 2026-07-28 or newer"
+        );
+        let info = handler.get_info();
+        assert!(
+            supported.contains(&info.protocol_version),
+            "fallback version from get_info must be in the supported list"
+        );
     }
 }
